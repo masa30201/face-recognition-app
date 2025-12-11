@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>顔認識写真分類アプリ - 高精度版</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- 認証画面 -->
+    <div id="auth-screen" class="auth-screen">
+        <div class="auth-container">
+            <div class="auth-icon">🔐</div>
+            <h1>顔認識写真分類アプリ</h1>
+            <p class="auth-subtitle">高精度版（face_recognition）</p>
+            <div class="auth-form">
+                <input type="password" id="passphrase-input" class="auth-input" placeholder="合言葉を入力..." autocomplete="off">
+                <button class="btn btn-primary" id="auth-submit-btn">ログイン</button>
+                <div id="auth-error" class="auth-error" style="display: none;">合言葉が正しくありません</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- メインアプリ -->
+    <div class="container" id="main-app" style="display: none;">
+        <header>
+            <h1>📸 顔認識写真分類アプリ</h1>
+            <p class="subtitle">face_recognition - 99.38%精度</p>
+        </header>
+
+        <!-- ナビゲーションタブ -->
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="upload">📤 アップロード</button>
+            <button class="tab-btn" data-tab="process">⚙️ 処理</button>
+            <button class="tab-btn" data-tab="persons">👥 人物管理</button>
+            <button class="tab-btn" data-tab="photos">🖼️ 写真一覧</button>
+        </nav>
+
+        <!-- アップロードタブ -->
+        <div class="tab-content active" id="upload-tab">
+            <div class="upload-section">
+                <h2>写真をアップロード</h2>
+                <div class="upload-status" id="upload-status" style="display: none;">
+                    <div class="upload-progress">
+                        <div class="upload-progress-bar" id="upload-progress-bar"></div>
+                    </div>
+                    <div class="upload-status-text" id="upload-status-text"></div>
+                </div>
+                <div class="upload-area" id="upload-area">
+                    <div class="upload-icon">📁</div>
+                    <p>クリックまたはドラッグ&ドロップで写真を追加</p>
+                    <p class="upload-hint">（一度に最大500枚まで）</p>
+                    <input type="file" id="file-input" multiple accept="image/*" style="display: none;">
+                </div>
+                <div class="upload-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">アップロード済み:</span>
+                        <span class="stat-value" id="uploaded-count">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">処理済み:</span>
+                        <span class="stat-value" id="processed-count">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 処理タブ -->
+        <div class="tab-content" id="process-tab">
+            <div class="process-section">
+                <h2>顔検出と分類（バックグラウンド処理）</h2>
+                <div class="queue-status" id="queue-status">
+                    <div class="queue-item">
+                        <span>待機中:</span>
+                        <span id="queue-pending">0</span>
+                    </div>
+                    <div class="queue-item">
+                        <span>処理中:</span>
+                        <span id="queue-processing">0</span>
+                    </div>
+                    <div class="queue-item">
+                        <span>完了:</span>
+                        <span id="queue-completed">0</span>
+                    </div>
+                    <div class="queue-item">
+                        <span>失敗:</span>
+                        <span id="queue-failed">0</span>
+                    </div>
+                </div>
+                <div class="process-controls">
+                    <button class="btn btn-primary" id="start-process-btn">🚀 処理を開始</button>
+                    <button class="btn btn-secondary" id="refresh-status-btn">🔄 状態を更新</button>
+                </div>
+                <div class="process-info">
+                    <p>💡 バックグラウンドで自動処理されます</p>
+                    <p>📊 処理状況は自動更新されます（10秒ごと）</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 人物管理タブ -->
+        <div class="tab-content" id="persons-tab">
+            <div class="persons-section">
+                <h2>検出された人物</h2>
+                <div class="persons-stats">
+                    <div class="stat-card">
+                        <div class="stat-number" id="total-persons">0</div>
+                        <div class="stat-label">登録人物</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="total-faces">0</div>
+                        <div class="stat-label">検出された顔</div>
+                    </div>
+                </div>
+                <div class="persons-grid" id="persons-grid"></div>
+            </div>
+        </div>
+
+        <!-- 写真一覧タブ -->
+        <div class="tab-content" id="photos-tab">
+            <div class="photos-section">
+                <h2>アップロード済み写真</h2>
+                <div class="photos-grid" id="photos-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- モーダル：人物名編集 -->
+    <div class="modal" id="edit-person-modal">
+        <div class="modal-content">
+            <h3>人物名を編集</h3>
+            <input type="text" id="person-name-input" class="modal-input" placeholder="名前を入力...">
+            <div class="modal-actions">
+                <button class="btn btn-primary" id="save-person-btn">保存</button>
+                <button class="btn btn-secondary" id="cancel-person-btn">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

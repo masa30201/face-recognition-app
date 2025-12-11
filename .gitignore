@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# 環境変数（重要：プッシュしない）
+.env
+
+# データベース（ローカル開発用）
+*.db
+*.sqlite
+*.sqlite3
+face_recognition.db
+
+# アップロードファイル（ローカル開発用）
+uploads/
+
+# IDE設定
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS固有
+.DS_Store
+Thumbs.db
+
+# ログファイル
+*.log
+
+# Docker関連（ローカル開発用）
+docker-compose.override.yml
