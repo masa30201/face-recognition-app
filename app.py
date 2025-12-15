@@ -12,7 +12,8 @@ import face_processor
 
 app = Flask(__name__)
 app.config.from_object(Config)
-CORS(app)
+app.secret_key = Config.SECRET_KEY  # セッション用のシークレットキーを設定
+CORS(app, supports_credentials=True)  # クッキー/セッションをサポート
 
 # データベース初期化
 db.init_app(app)
@@ -25,20 +26,23 @@ celery = Celery(
 )
 celery.conf.update(app.config)
 
-# S3クライアント
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=Config.AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=Config.AWS_SECRET_ACCESS_KEY,
-    region_name=Config.AWS_REGION
-)
+# S3クライアント（AWS_ACCESS_KEY_IDが設定されている場合のみ）
+s3_client = None
+if Config.AWS_ACCESS_KEY_ID and Config.AWS_SECRET_ACCESS_KEY:
+    s3_client = boto3.client(
+        's3',
+        aws_access_key_id=Config.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=Config.AWS_SECRET_ACCESS_KEY,
+        region_name=Config.AWS_REGION
+    )
 
 
 # Celeryタスク
 @celery.task
 def process_photo_task(photo_id):
     """バックグラウンドで写真を処理"""
-    return face_processor.process_single_photo(photo_id)
+    with app.app_context():
+        return face_processor.process_single_photo(photo_id)
 
 
 # 認証チェック
@@ -82,8 +86,9 @@ def upload_photos():
     
     files = request.files.getlist('files')
     
-    if len(files) > Config.MAX_UPLOAD_SIZE:
-        return jsonify({'error': f'最大{Config.MAX_UPLOAD_SIZE}枚まで'}), 400
+    max_upload = getattr(Config, 'MAX_UPLOAD_SIZE', 500)
+    if len(files) > max_upload:
+        return jsonify({'error': f'最大{max_upload}枚まで'}), 400
     
     uploaded = []
     errors = []
@@ -97,24 +102,32 @@ def upload_photos():
             file_data = file.read()
             file_size = len(file_data)
             
-            # S3キー生成
             photo_id = str(uuid.uuid4())
-            s3_key = f"photos/{photo_id}/{file.filename}"
             
-            # S3にアップロード
-            s3_client.put_object(
-                Bucket=Config.AWS_S3_BUCKET,
-                Key=s3_key,
-                Body=file_data,
-                ContentType=file.content_type or 'image/jpeg'
-            )
+            # S3が設定されている場合
+            if s3_client and Config.AWS_S3_BUCKET:
+                s3_key = f"photos/{photo_id}/{file.filename}"
+                
+                # S3にアップロード
+                s3_client.put_object(
+                    Bucket=Config.AWS_S3_BUCKET,
+                    Key=s3_key,
+                    Body=file_data,
+                    ContentType=file.content_type or 'image/jpeg'
+                )
+            else:
+                # ローカル保存（開発用）
+                s3_key = f"uploads/{photo_id}_{file.filename}"
+                upload_dir = 'uploads'
+                os.makedirs(upload_dir, exist_ok=True)
+                with open(os.path.join(upload_dir, f"{photo_id}_{file.filename}"), 'wb') as f:
+                    f.write(file_data)
             
             # データベースに保存
             photo = Photo(
                 id=photo_id,
                 file_name=file.filename,
                 s3_key=s3_key,
-                file_size=file_size,
                 processed=False,
                 face_count=0
             )
@@ -181,15 +194,16 @@ def get_photos():
     photos = [photo.to_dict() for photo in pagination.items]
     
     # S3の署名付きURL生成
-    for photo in photos:
-        try:
-            photo['url'] = s3_client.generate_presigned_url(
-                'get_object',
-                Params={'Bucket': Config.AWS_S3_BUCKET, 'Key': photo['s3_key']},
-                ExpiresIn=3600
-            )
-        except:
-            photo['url'] = None
+    if s3_client and Config.AWS_S3_BUCKET:
+        for photo in photos:
+            try:
+                photo['url'] = s3_client.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': Config.AWS_S3_BUCKET, 'Key': photo['s3_key']},
+                    ExpiresIn=3600
+                )
+            except:
+                photo['url'] = None
     
     return jsonify({
         'data': photos,
@@ -209,14 +223,15 @@ def get_photo(photo_id):
     photo_dict = photo.to_dict()
     
     # 署名付きURL生成
-    try:
-        photo_dict['url'] = s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': Config.AWS_S3_BUCKET, 'Key': photo['s3_key']},
-            ExpiresIn=3600
-        )
-    except:
-        photo_dict['url'] = None
+    if s3_client and Config.AWS_S3_BUCKET:
+        try:
+            photo_dict['url'] = s3_client.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': Config.AWS_S3_BUCKET, 'Key': photo_dict['s3_key']},
+                ExpiresIn=3600
+            )
+        except:
+            photo_dict['url'] = None
     
     return jsonify(photo_dict)
 
@@ -237,16 +252,17 @@ def get_persons():
     persons = [person.to_dict() for person in pagination.items]
     
     # サムネイルの署名付きURL生成
-    for person in persons:
-        if person['thumbnail_url']:
-            try:
-                person['thumbnail_url'] = s3_client.generate_presigned_url(
-                    'get_object',
-                    Params={'Bucket': Config.AWS_S3_BUCKET, 'Key': person['thumbnail_url'].split('/')[-1]},
-                    ExpiresIn=3600
-                )
-            except:
-                pass
+    if s3_client and Config.AWS_S3_BUCKET:
+        for person in persons:
+            if person.get('thumbnail_s3_key'):
+                try:
+                    person['thumbnail_url'] = s3_client.generate_presigned_url(
+                        'get_object',
+                        Params={'Bucket': Config.AWS_S3_BUCKET, 'Key': person['thumbnail_s3_key']},
+                        ExpiresIn=3600
+                    )
+                except:
+                    person['thumbnail_url'] = None
     
     return jsonify({
         'data': persons,
@@ -347,4 +363,4 @@ with app.app_context():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)
